@@ -1,8 +1,8 @@
-import json  # For loading .vocab files
-import regex as re # For the GPT-2 PAT regex
+import json
+import regex as re
 from typing import List, Dict, Tuple, Optional, Iterable, Iterator
 
-# This is the GPT-2 pre-tokenizer regex pattern from the assignment
+
 GPT2_PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
 class Tokenizer:
@@ -36,13 +36,8 @@ class Tokenizer:
                 if token_bytes in self.encoder:
                     self.special_tokens[token_str] = self.encoder[token_bytes]
                 else:
-                    # This can happen if the test suite provides special tokens
-                    # that aren't in the base vocab (e.g. for testing)
                     print(f"Warning: Special token '{token_str}' not found in provided vocab.")
-            
-            # --- FIX for overlapping tokens ---
-            # Sort tokens by length, descending, to match longest first
-            # e.g., match "<|endoftext|><|endoftext|>" before "<|endoftext|>"
+                # Sort special tokens by length (longest first) for regex
             escaped_tokens = sorted(
                 [re.escape(t) for t in self.special_tokens.keys()], 
                 key=len, 
@@ -56,8 +51,6 @@ class Tokenizer:
     def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: Optional[List[str]] = None):
         '''
         Class method that constructs and returns a Tokenizer from serialized vocab/merges.
-        
-        NOTE: This is fixed to load the gpt2/tiktoken file formats, not ast.literal_eval.
         '''
         try:
             # 1. Load the vocabulary (which is a JSON file)
@@ -73,7 +66,6 @@ class Tokenizer:
             loaded_merges: List[Tuple[bytes, bytes]] = []
             with open(merges_filepath, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
-                # Skip the first line (version header) in gpt2.merges
                 for line in lines[1:]:
                     line = line.strip()
                     if not line:
@@ -81,7 +73,6 @@ class Tokenizer:
                     
                     parts = line.split(' ')
                     if len(parts) == 2:
-                        # Encode the string parts to bytes to match our vocab
                         loaded_merges.append(
                             (parts[0].encode('utf-8'), parts[1].encode('utf-8'))
                         )
@@ -102,14 +93,11 @@ class Tokenizer:
     def _bpe_merge(self, word_bytes: bytes) -> List[int]:
         """
         Applies the BPE merge rules to a single pre-token (word).
-        (This logic is unchanged)
         """
         if not word_bytes:
             return []
             
         # 1. Start with single-byte representations
-        # Note: The raw bytes (e.g., b'\xf0') may NOT be in the gpt2
-        # vocab, but the merged tokens (e.g., b'\xf0\x9f\x99\x83') will be.
         tokens: List[bytes] = [word_bytes[i:i+1] for i in range(len(word_bytes))]
 
         while True:
@@ -137,9 +125,6 @@ class Tokenizer:
             tokens = new_tokens
         
         # 6. Convert final byte tokens to IDs
-        # The test suite expects that we *only* return IDs that are in the vocab.
-        # This handles the unicode `🙃` (b'\xf0\x9f\x99\x83') which merges into
-        # three tokens [8582, 247, 225] corresponding to b'\xf0\x9f', b'\x99', b'\x83'
         final_ids = [self.encoder[t] for t in tokens if t in self.encoder]
         
         return final_ids
@@ -159,7 +144,6 @@ class Tokenizer:
                 token_ids.extend(self._bpe_merge(word_bytes))
             return token_ids
 
-        # --- We have special tokens ---
         last_end = 0
         # Iterate over all matches for special tokens
         for special_match in self.special_pattern.finditer(text):
@@ -175,8 +159,6 @@ class Tokenizer:
             special_token_str = special_match.group(0)
             if special_token_str in self.special_tokens:
                 token_ids.append(self.special_tokens[special_token_str])
-            # If it's not in the map, it's a false match (part of a longer token)
-            # We can ignore it, but the sorted regex should prevent this.
             
             last_end = special_match.end()
             
@@ -194,20 +176,16 @@ class Tokenizer:
         '''
         Given an iterable of strings (e.g., a Python file handle), return a generator 
         that lazily yields token IDs.
-        (This implementation is correct given the test suite's use of line-by-line iterables)
         '''
         for text_chunk in iterable:
-            # Yields tokens from each chunk one by one
             yield from self.encode(text_chunk)
 
 
     def decode(self, ids: List[int]) -> str:
         '''
         Decode a sequence of token IDs into text.
-        (This implementation is correct and uses errors='replace')
         '''
         token_bytes_list = [self.vocab.get(token_id, b'') for token_id in ids]
         concatenated_bytes = b"".join(token_bytes_list)
-        
-        # Use errors='replace' to insert U+FFFD for invalid bytes
+
         return concatenated_bytes.decode('utf-8', errors='replace')
