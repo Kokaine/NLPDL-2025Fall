@@ -11,10 +11,11 @@ from torch import Tensor
 
 from basics.my_train_bpe import train_bpe
 from basics.tokenizer import Tokenizer
-from basics.templates import Linear, Embedding, RMSNorm, SwiGLU, RoPE, softmax
-from basics.templates import scaled_dot_product_attention as sdpa
-from basics.templates import CasualMultiheadSelfAttention as cmsa
-from basics.templates import TransformerBlock, TransformerLM
+from basics.modules import Linear, Embedding, RMSNorm, SwiGLU, RoPE, softmax
+from basics.modules import scaled_dot_product_attention as sdpa
+from basics.modules import CasualMultiheadSelfAttention as cmsa
+from basics.modules import TransformerBlock, TransformerLM
+from basics.optimizers import SGD, AdamW
 
 def run_linear(
     d_in: int,
@@ -616,7 +617,14 @@ def run_cross_entropy(
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
+    targets = targets.unsqueeze(-1)
+    logits_for_targets = torch.gather(inputs, dim=1, index=targets)
+    max_logits, _ = torch.max(inputs, dim=1, keepdim=True)
+    log_sum_exp = torch.log(torch.sum(torch.exp(inputs - max_logits), dim=1, keepdim=True))
+    log_probs = logits_for_targets - max_logits - log_sum_exp
+    loss = -torch.mean(log_probs)
+
+    return loss
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
@@ -635,7 +643,7 @@ def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    return AdamW
 
 
 def run_get_lr_cosine_schedule(
@@ -728,7 +736,6 @@ def get_tokenizer(
     """
 
     return Tokenizer(vocab, merges, special_tokens)
-    # raise NotImplementedError
 
 
 def run_train_bpe(
@@ -758,9 +765,7 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    # print("Training BPE tokenizer...")
-    # print("Input path:", input_path)
-    # print("Vocab size:", vocab_size)
+
     trained_vocab, trained_merges = train_bpe(
         input_path=input_path,
         vocab_size=vocab_size,
