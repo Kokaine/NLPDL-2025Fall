@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import math
 from typing import IO, Any, BinaryIO
 from collections.abc import Iterable
 from jaxtyping import Float, Int
@@ -559,7 +560,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    return in_features * torch.sigmoid(in_features)
 
 
 def run_get_batch(
@@ -582,7 +583,19 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+
+    start_pos = torch.randint(
+        low=0,
+        high=len(dataset) - context_length,
+        size=(batch_size,)
+    )
+    
+    x_batch = [torch.from_numpy(dataset[start : start+context_length]) for start in start_pos]
+    y_batch = [torch.from_numpy(dataset[start+1 : start+context_length+1]) for start in start_pos]
+    X = torch.stack(x_batch).to(device, dtype=torch.long)
+    Y = torch.stack(y_batch).to(device, dtype=torch.long)
+
+    return X, Y
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -636,7 +649,23 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    total_norm = 0.0
+    eps = 1e-6
+
+    for p in parameters:
+        if p.grad is not None:
+            p_norm = p.grad.data.norm(2)
+            total_norm += p_norm.item() ** 2
+
+    total_norm = total_norm ** 0.5
+    clip_coeff = max_l2_norm / (total_norm + eps)
+
+    if total_norm > max_l2_norm:
+        for p in parameters:
+            if p.grad is not None:
+                p.grad.data.mul_(clip_coeff)
+    
+    return None
 
 
 def get_adamw_cls() -> Any:
@@ -671,7 +700,17 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+
+    if it < warmup_iters:
+        return max_learning_rate * (it / warmup_iters)
+
+    elif it <= cosine_cycle_iters:
+        cosine_term = math.cos((it - warmup_iters)/(cosine_cycle_iters - warmup_iters) * math.pi)
+        decayed_rate = min_learning_rate + 0.5 * (max_learning_rate - min_learning_rate) * (1 + cosine_term)
+        return decayed_rate
+
+    else:
+        return min_learning_rate
 
 
 def run_save_checkpoint(
@@ -690,7 +729,17 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
+    ckpt = {
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'iteration': iteration,
+    }
+
+    if isinstance(out, (str, os.PathLike)):
+        with open(out, 'wb') as f:
+            torch.save(ckpt, f)
+    else:
+        torch.save(ckpt, out)
 
 
 def run_load_checkpoint(
@@ -711,7 +760,15 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
+    if isinstance(src, (str, os.PathLike)):
+        with open(src, 'rb') as f:
+            ckpt = torch.load(f)
+    else:
+        ckpt = torch.load(src)
+
+    model.load_state_dict(ckpt['model_state_dict'])
+    optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+    return ckpt['iteration']
 
 
 def get_tokenizer(
