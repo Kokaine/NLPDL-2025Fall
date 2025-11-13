@@ -507,7 +507,11 @@ class LSTMCell(nn.Module):
             device (torch.device, optional): Device to store parameters. Defaults to None.
             dtype (torch.dtype, optional): Data type of parameters. Defaults to None.
         """
-        ...
+        super().__init__()
+
+        self.d_model = d_model
+        self.input_linear = Linear(d_model, 4 * d_model, bias=True, device=device, dtype=dtype)
+        self.hidden_linear = Linear(d_model, 4 * d_model, bias=True, device=device, dtype=dtype)
 
     def forward(
         self,
@@ -526,7 +530,28 @@ class LSTMCell(nn.Module):
             tuple[torch.Tensor, torch.Tensor]: The next (hidden_state, cell_state),
             each of shape (batch_size, d_model).
         """
-        ...
+        
+        if state is not None:
+            h_prev, c_prev = state
+        else:
+            batch_size = x.shape[0]
+            h_prev = torch.zeros((batch_size, self.d_model), device=x.device, dtype=x.dtype)
+            c_prev = torch.zeros((batch_size, self.d_model), device=x.device, dtype=x.dtype)
+        
+        gates = self.input_linear(x) + self.hidden_linear(h_prev)
+        f_gate, i_gate, o_gate, g_gate = gates.split(gates, self.d_model, dim=-1)
+
+        f_gate = torch.sigmoid(f_gate)
+        i_gate = torch.sigmoid(i_gate)
+        o_gate = torch.sigmoid(o_gate)
+        g_gate = torch.tanh(g_gate)
+
+        c_next = f_gate * c_prev + i_gate * g_gate
+        h_next = o_gate * torch.tanh(c_next)
+
+        return (h_next, c_next)
+
+
 
 class LSTM(nn.Module):
     """Multi-layer LSTM network with batch-first input."""
@@ -546,7 +571,12 @@ class LSTM(nn.Module):
             device (torch.device, optional): Device to store parameters. Defaults to None.
             dtype (torch.dtype, optional): Data type of parameters. Defaults to None.
         """
-        ...
+        super().__init__()
+        self.d_model = d_model
+        self.num_layers = num_layers
+        self.layers = nn.ModuleList([
+            LSTMCell(d_model, device=device, dtype=dtype) for _ in range(num_layers)
+        ])
 
     def forward(
         self,
@@ -567,7 +597,33 @@ class LSTM(nn.Module):
                 - tuple[torch.Tensor, torch.Tensor]: Next (hidden_states, cell_states),
                     each of shape (num_layers, batch_size, d_model).
         """
-        ...
+        batch_size, seq_len, _ = x.shape
+
+        if state is not None:
+            h_prev, c_prev = state
+        else:
+            h_prev = torch.zeros((self.num_layers, batch_size, self.d_model), device=x.device, dtype=x.dtype)
+            c_prev = torch.zeros((self.num_layers, batch_size, self.d_model), device=x.device, dtype=x.dtype)
+
+        output = []
+        for time_step in range(seq_len):
+            x_t = x[:, time_step, :]
+            h_next_states = []
+            c_next_states = []
+            for layer_idx, layer in enumerate(self.layers):
+                h_layer_prev = h_prev[layer_idx]
+                c_layer_prev = c_prev[layer_idx]
+                h_layer_next, c_layer_next = layer(x_t, state=(h_layer_prev, c_layer_prev))
+                h_next_states.append(h_layer_next)
+                c_next_states.append(c_layer_next)
+                x_t = h_layer_next
+            # not sure whethter use unsqueeze?
+            output.append(x_t.unsqueeze(1))
+            h_prev = torch.stack(h_next_states, dim=0)
+            c_prev = torch.stack(c_next_states, dim=0)
+        
+        output_tensor = torch.cat(output, dim=1)
+        return output_tensor, (h_prev, c_prev)
 
 class LSTMLM(nn.Module):
     """LSTM-based language model."""
@@ -589,7 +645,11 @@ class LSTMLM(nn.Module):
             device (torch.device, optional): Device to store parameters. Defaults to None.
             dtype (torch.dtype, optional): Data type of parameters. Defaults to None.
         """
-        ...
+        super().__init__()
+
+        self.token_embedding = Embedding(vocab_size, d_model, device=device, dtype=dtype)
+        self.lstm = LSTM(d_model, num_layers, device=device, dtype=dtype)
+        self.output_linear = Linear(d_model, vocab_size, bias=False, device=device, dtype=dtype)
 
     def forward(
         self,
@@ -607,4 +667,8 @@ class LSTMLM(nn.Module):
         Returns:
             torch.Tensor: Logits of shape (batch_size, seq_len, vocab_size).
         """
-        ...
+        
+        x = self.token_embedding(input_ids)
+        lstm_output, _ = self.lstm(x, state=state)
+        logits = self.output_linear(lstm_output)
+        return logits
