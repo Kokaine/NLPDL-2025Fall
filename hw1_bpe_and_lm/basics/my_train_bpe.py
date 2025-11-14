@@ -183,7 +183,6 @@ def train_bpe(
         all_counts_lists = pool.map(worker_func, file_chunks)
         for count in all_counts_lists:
             current_words.update(count)
-    print(f"--- Pre-tokenization complete. ---")
 
     merges: List[Tuple[bytes, bytes]] = []
     for i in range(num_merges):
