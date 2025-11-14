@@ -19,8 +19,6 @@ from utils import (
     save_checkpoint
 )
 
-
-# Weights and Biases (swanlab) for logging (optional)
 try:
     import swanlab
     SWANLAB_AVAILABLE = True
@@ -28,7 +26,6 @@ except ImportError:
     SWANLAB_AVAILABLE = False
 
 # --- Configuration & Argument Parsing ---
-
 def get_args() -> argparse.Namespace:
     """Parses command-line arguments."""
     parser = argparse.ArgumentParser(description="Train a Language Model")
@@ -68,7 +65,7 @@ def get_args() -> argparse.Namespace:
         "--num_layers", type=int, default=8, 
         help="Number of layers in the model."
     )
-    # Transformer-specific
+    # Transformer
     parser.add_argument(
         "--num_heads", type=int, default=8, 
         help="Number of attention heads (for Transformer)."
@@ -120,7 +117,7 @@ def get_args() -> argparse.Namespace:
         help="Max norm for gradient clipping."
     )
 
-    # --- Logging & System ---
+    # --- Logging and System ---
     parser.add_argument(
         "--log_interval", type=int, default=100, 
         help="Log training stats every N steps."
@@ -137,13 +134,14 @@ def get_args() -> argparse.Namespace:
         "--swanlab_project", type=str, default=None, 
         help="Weights & Biases project name. If None, swanlab is disabled."
     )
+    parser.add_argument(
+        "--ckpt_resume", type=bool, default=False, 
+        help="Resuming from a previous training."
+    )
 
     return parser.parse_args()
 
-# --- Helper Functions ---
-
 def setup_device(device_str: str) -> str:
-    """Selects the best available device."""
     if device_str == "auto":
         if torch.cuda.is_available():
             return "cuda"
@@ -154,7 +152,6 @@ def setup_device(device_str: str) -> str:
     return device_str
 
 def load_data(path: str) -> np.ndarray:
-    """Loads a .npy file in memory-mapped mode."""
     print(f"Loading data from {path} (memory-mapped)...")
     try:
         data = np.load(path, mmap_mode='r', allow_pickle=True)
@@ -167,7 +164,6 @@ def load_data(path: str) -> np.ndarray:
         exit(1)
 
 def setup_model(args: argparse.Namespace) -> torch.nn.Module:
-    """Initializes the correct model based on args."""
     print(f"Initializing {args.model_type} model...")
     if args.model_type == "transformer":
         model = TransformerLM(
@@ -180,7 +176,7 @@ def setup_model(args: argparse.Namespace) -> torch.nn.Module:
             use_rope=True,
             theta=args.rope_theta,
             device=args.device,
-            dtype=torch.float32  # AdamW works best with float32
+            dtype=torch.float32
         )
     elif args.model_type == "lstm":
         model = LSTMLM(
@@ -193,7 +189,6 @@ def setup_model(args: argparse.Namespace) -> torch.nn.Module:
     return model.to(args.device)
 
 def setup_logging(args: argparse.Namespace):
-    """Initializes Weights & Biases if requested."""
     if args.swanlab_project and SWANLAB_AVAILABLE:
         print("Initializing Weights & Biases...")
         swanlab.init(project=args.swanlab_project, config=vars(args))
@@ -208,122 +203,91 @@ def evaluate(
     val_data: np.ndarray, 
     args: argparse.Namespace
 ) -> float:
-    """Runs one evaluation step and returns the loss."""
     model.eval()
     
-    val_x, val_y = run_get_batch(
+    val_x, val_y = get_batch(
         val_data, 
         args.batch_size, 
         args.context_length, 
         args.device
     )
-    
-    # Get logits
-    if args.model_type == "transformer":
-        pos = torch.arange(
-            0, args.context_length, device=args.device
-        ).unsqueeze(0) # Shape (1, context_length)
-        logits = model(val_x, pos)
-    else: # lstm
-        logits = model(val_x)
-        
-    val_loss = run_cross_entropy(logits, val_y)
+
+    logits = model(val_x)
+    logits_for_loss = logits.permute(0, 2, 1)
+    val_loss = cross_entropy(logits_for_loss, val_y)
     
     model.train()
     return val_loss.item()
 
-# --- Main Training Loop ---
-
 def main():
     args = get_args()
-    
-    # --- Setup ---
     args.device = setup_device(args.device)
     print(f"Using device: {args.device}")
     
-    torch.manual_seed(1337) # for reproducibility
+    torch.manual_seed(1337)
     
     use_swanlab = setup_logging(args)
-    
-    # --- Data ---
     train_data = load_data(args.train_data)
     val_data = load_data(args.val_data)
     
-    # --- Model & Optimizer ---
     model = setup_model(args)
     optimizer = AdamW(
         model.parameters(),
-        lr=args.max_lr, # Initial LR is max, scheduler will adjust
+        lr=args.max_lr,
         betas=(args.beta1, args.beta2),
         weight_decay=args.weight_decay
     )
     
-    # --- Checkpoint Resuming ---
-    start_step = load_checkpoint(os.path.join(args.ckpt_path, f"latest_{args.model_type}.pt"), model, optimizer, args.device)
-    
-    print(f"Starting training from step {start_step+1}...")
+    if args.ckpt_resume:
+        start_step = load_checkpoint(os.path.join(args.ckpt_path, f"latest_{args.model_type}.pt"), model, optimizer, args.device)
+        print(f"Starting training from step {start_step+1}...")
+    else:
+        start_step = 0
+
     model.train()
     start_time = time.time()
 
     pbar = tqdm(
         range(start_step, args.max_steps),
-        initial=start_step, # This sets the bar's starting point
-        total=args.max_steps,   # This ensures the bar's total is correct
-        desc="Training"       # A static description
+        initial=start_step,
+        total=args.max_steps,
+        desc="Training"
     )
-    
-    # --- Training Loop ---
+
     for step in pbar:
-        current_step_num = step + 1 # Use 1-based indexing for scheduler
+        current_step_num = step + 1
         
-        # 1. Update Learning Rate
         lr = get_lr_cosine_schedule(
-            t=current_step_num,
-            alpha_max=args.max_lr,
-            alpha_min=args.min_lr,
-            T_w=args.warmup_steps,
-            T_c=args.max_steps
+            it=current_step_num,
+            max_learning_rate=args.max_lr,
+            min_learning_rate=args.min_lr,
+            warmup_iters=args.warmup_steps,
+            cosine_cycle_iters=args.max_steps
         )
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
-        # 2. Get Data Batch
-        x, y = run_get_batch(
+        x, y = get_batch(
             train_data, 
             args.batch_size, 
             args.context_length, 
             args.device
         )
         
-        # 3. Forward Pass
-        if args.model_type == "transformer":
-            pos = torch.arange(
-                0, args.context_length, device=args.device
-            ).unsqueeze(0) # Shape (1, context_length)
-            logits = model(x, pos)
-        else: # lstm
-            # LSTM forward pass does not take position_ids
-            # and manages its own state internally
-            logits = model(x)
-            
-        loss = run_cross_entropy(logits, y)
+        logits = model(x)
+        logits_for_loss = logits.permute(0, 2, 1)
+        loss = cross_entropy(logits_for_loss, y)
 
-        # 4. Backward Pass
         optimizer.zero_grad()
         loss.backward()
-        
-        # 5. Gradient Clipping
-        gradient_clipping(model.parameters(), max_norm=args.grad_clip_norm)
-        
-        # 6. Optimizer Step
+        gradient_clipping(model.parameters(), max_l2_norm=args.grad_clip_norm)
         optimizer.step()
         
-        # 7. Logging
+        # Logging
         if current_step_num % args.log_interval == 0:
             val_loss = evaluate(model, val_data, args)
             end_time = time.time()
             time_per_step = (end_time - start_time) * 1000 / args.log_interval
-            
             print(
                 f"Step {current_step_num}/{args.max_steps} | "
                 f"Train Loss: {loss.item():.4f} | "
@@ -341,9 +305,8 @@ def main():
                     "time_per_step_ms": time_per_step
                 })
             
-            start_time = time.time() # Reset timer
-            
-        # 8. Checkpointing
+            start_time = time.time()
+
         if current_step_num % args.ckpt_interval == 0:
             if current_step_num - args.ckpt_interval > 0:
                 old_path = os.path.join(args.ckpt_path, f"latest_{args.model_type}.pt")
@@ -351,18 +314,18 @@ def main():
                     new_path = os.path.join(args.ckpt_path, f"{current_step_num - args.ckpt_interval}_{args.model_type}.pt")
                     os.rename(old_path, new_path)
             save_checkpoint(
-                os.path.join(args.ckpt_path, f"latest_{args.model_type}.pt"), 
                 model, 
                 optimizer, 
-                current_step_num
+                current_step_num,
+                os.path.join(args.ckpt_path, f"latest_{args.model_type}.pt")
             )
             
     print("Training finished.")
     save_checkpoint(
-        os.path.join(args.ckpt_path, f"final_{args.model_type}.pt"), 
         model, 
         optimizer, 
-        args.max_steps
+        args.max_steps,
+        os.path.join(args.ckpt_path, f"final_{args.model_type}.pt")
     )
 
 if __name__ == "__main__":

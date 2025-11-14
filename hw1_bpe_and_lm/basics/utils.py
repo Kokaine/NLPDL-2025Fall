@@ -33,13 +33,14 @@ def cross_entropy(
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
+    # print("CE input shape:", inputs.shape)
     targets = targets.unsqueeze(-1)
     logits_for_targets = torch.gather(inputs, dim=1, index=targets)
     max_logits, _ = torch.max(inputs, dim=1, keepdim=True)
     log_sum_exp = torch.log(torch.sum(torch.exp(inputs - max_logits), dim=1, keepdim=True))
     log_probs = logits_for_targets - max_logits - log_sum_exp
     loss = -torch.mean(log_probs)
-
+    
     return loss
 
 def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
@@ -140,6 +141,7 @@ def load_checkpoint(
     src: str | os.PathLike | BinaryIO | IO[bytes],
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
+    device: str
 ):
     """
     Given a serialized checkpoint (path or file-like object), restore the
@@ -156,9 +158,9 @@ def load_checkpoint(
     """
     if isinstance(src, (str, os.PathLike)):
         with open(src, 'rb') as f:
-            ckpt = torch.load(f)
+            ckpt = torch.load(f).to(device)
     else:
-        ckpt = torch.load(src)
+        ckpt = torch.load(src).to(device)
 
     model.load_state_dict(ckpt['model_state_dict'])
     optimizer.load_state_dict(ckpt['optimizer_state_dict'])
@@ -191,8 +193,15 @@ def get_batch(
         size=(batch_size,)
     )
     
-    x_batch = [torch.from_numpy(dataset[start : start+context_length]) for start in start_pos]
-    y_batch = [torch.from_numpy(dataset[start+1 : start+context_length+1]) for start in start_pos]
+    x_batch = [
+        torch.tensor(dataset[start : start + context_length]) 
+        for start in start_pos
+    ]
+    y_batch = [
+        torch.tensor(dataset[start + 1 : start + 1 + context_length]) 
+        for start in start_pos
+    ]
+
     X = torch.stack(x_batch).to(device, dtype=torch.long)
     Y = torch.stack(y_batch).to(device, dtype=torch.long)
 

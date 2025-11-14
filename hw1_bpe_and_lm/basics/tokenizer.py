@@ -216,15 +216,10 @@ class Tokenizer:
 def main():
 
     print("Loading tokenizer...")
-    # vocab = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/tests/fixtures/gpt2_vocab.json"
-    # merges = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/tests/fixtures/gpt2_merges.txt"
     vocab = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/trained_vocab.json"
     merges = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/trained_merges.txt"
-    # txt_train_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-valid.txt"
-    txt_train_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-valid.txt"
-    # txt_valid_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-valid.txt"
-    npy_train_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-valid.npy"
-    # npy_valid_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-valid.npy"
+    txt_train_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-train.txt"
+    npy_train_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-train.npy"
     special_tokens = ["<|endoftext|>"]
     tokenizer = Tokenizer.from_files(vocab, merges, special_tokens)
 

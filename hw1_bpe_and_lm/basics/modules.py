@@ -539,7 +539,7 @@ class LSTMCell(nn.Module):
             c_prev = torch.zeros((batch_size, self.d_model), device=x.device, dtype=x.dtype)
         
         gates = self.input_linear(x) + self.hidden_linear(h_prev)
-        f_gate, i_gate, o_gate, g_gate = gates.split(gates, self.d_model, dim=-1)
+        f_gate, i_gate, o_gate, g_gate = gates.split(self.d_model, dim=-1)
 
         f_gate = torch.sigmoid(f_gate)
         i_gate = torch.sigmoid(i_gate)

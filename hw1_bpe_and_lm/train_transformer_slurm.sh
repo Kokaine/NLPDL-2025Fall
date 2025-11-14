@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=LM_1e-3
+#SBATCH --job-name=ATTN_1e-3
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --partition=h100
@@ -16,31 +16,30 @@ CKPT_PATH=/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/ckpt
 echo "Activating virtual environment..."
 source /mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/.venv/bin/activate
 
-# Run your Python script
 echo "Running Python script..."
 python /mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/basics/train.py \
-    --train_data $TRAIN_DATA_PATH \
-    --val_data $VAL_DATA_PATH \
-    --vocab_size $VOCAB_SIZE \
-    --ckpt_path $CKPT_PATH \
-    \
-    --model_type "lstm" \
-    --context_length 512 \
-    --d_model 512 \
-    --num_layers 8 \
-    \
-    --batch_size 64 \
-    --max_steps 20000 \
-    --max_lr 1e-4 \
-    --min_lr 1e-5 \
-    --warmup_steps 2000 \
-    --weight_decay 0.1 \
-    --grad_clip_norm 1.0 \
-    \
-    --log_interval 100 \
-    --ckpt_interval 2000 \
-    --device "cuda" \
-    --swanlab_project "NLPDL-LSTM" \
-
-# Deactivation is optional, as the job will end anyway
-echo "Job finished."
+  --train_data $TRAIN_DATA_PATH \
+  --val_data $VAL_DATA_PATH \
+  --vocab_size $VOCAB_SIZE \
+  --ckpt_path $CKPT_PATH \
+  \
+  --model_type "transformer" \
+  --context_length 512 \
+  --d_model 1024 \
+  --num_layers 8 \
+  --num_heads 8 \
+  --d_ff 4096 \
+  --rope_theta 10000.0 \
+  \
+  --batch_size 64 \
+  --max_steps 50000 \
+  --max_lr 1e-3 \
+  --min_lr 6e-5 \
+  --warmup_steps 2000 \
+  --weight_decay 0.1 \
+  --grad_clip_norm 1.0 \
+  \
+  --log_interval 100 \
+  --ckpt_interval 5000 \
+  --device "cuda" \
+  --swanlab_project "NLPDL-Transformer" # Set to "None" to disable
