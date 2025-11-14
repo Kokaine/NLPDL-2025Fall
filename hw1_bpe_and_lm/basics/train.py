@@ -20,12 +20,12 @@ from utils import (
 )
 
 
-# Weights and Biases (wandb) for logging (optional)
+# Weights and Biases (swanlab) for logging (optional)
 try:
-    import wandb
-    WANDB_AVAILABLE = True
+    import swanlab
+    SWANLAB_AVAILABLE = True
 except ImportError:
-    WANDB_AVAILABLE = False
+    SWANLAB_AVAILABLE = False
 
 # --- Configuration & Argument Parsing ---
 
@@ -134,8 +134,8 @@ def get_args() -> argparse.Namespace:
         help="Device to use ('cpu', 'cuda', 'auto')."
     )
     parser.add_argument(
-        "--wandb_project", type=str, default=None, 
-        help="Weights & Biases project name. If None, wandb is disabled."
+        "--swanlab_project", type=str, default=None, 
+        help="Weights & Biases project name. If None, swanlab is disabled."
     )
 
     return parser.parse_args()
@@ -157,7 +157,7 @@ def load_data(path: str) -> np.ndarray:
     """Loads a .npy file in memory-mapped mode."""
     print(f"Loading data from {path} (memory-mapped)...")
     try:
-        data = np.load(path, mmap_mode='r')
+        data = np.load(path, mmap_mode='r', allow_pickle=True)
         return data
     except FileNotFoundError:
         print(f"ERROR: Data file not found at {path}")
@@ -194,12 +194,12 @@ def setup_model(args: argparse.Namespace) -> torch.nn.Module:
 
 def setup_logging(args: argparse.Namespace):
     """Initializes Weights & Biases if requested."""
-    if args.wandb_project and WANDB_AVAILABLE:
+    if args.swanlab_project and SWANLAB_AVAILABLE:
         print("Initializing Weights & Biases...")
-        wandb.init(project=args.wandb_project, config=vars(args))
+        swanlab.init(project=args.swanlab_project, config=vars(args))
         return True
-    elif args.wandb_project:
-        print("Warning: --wandb_project was specified, but wandb is not installed.")
+    elif args.swanlab_project:
+        print("Warning: --swanlab_project was specified, but swanlab is not installed.")
     return False
 
 @torch.no_grad()
@@ -243,7 +243,7 @@ def main():
     
     torch.manual_seed(1337) # for reproducibility
     
-    use_wandb = setup_logging(args)
+    use_swanlab = setup_logging(args)
     
     # --- Data ---
     train_data = load_data(args.train_data)
@@ -259,14 +259,21 @@ def main():
     )
     
     # --- Checkpoint Resuming ---
-    start_step = load_checkpoint(args.ckpt_path, model, optimizer, args.device)
+    start_step = load_checkpoint(os.path.join(args.ckpt_path, f"latest_{args.model_type}.pt"), model, optimizer, args.device)
     
     print(f"Starting training from step {start_step+1}...")
     model.train()
     start_time = time.time()
+
+    pbar = tqdm(
+        range(start_step, args.max_steps),
+        initial=start_step, # This sets the bar's starting point
+        total=args.max_steps,   # This ensures the bar's total is correct
+        desc="Training"       # A static description
+    )
     
     # --- Training Loop ---
-    for step in range(start_step, args.max_steps):
+    for step in pbar:
         current_step_num = step + 1 # Use 1-based indexing for scheduler
         
         # 1. Update Learning Rate
@@ -325,8 +332,8 @@ def main():
                 f"Time/Step: {time_per_step:.2f}ms"
             )
             
-            if use_wandb:
-                wandb.log({
+            if use_swanlab:
+                swanlab.log({
                     "step": current_step_num,
                     "train_loss": loss.item(),
                     "val_loss": val_loss,
@@ -338,8 +345,13 @@ def main():
             
         # 8. Checkpointing
         if current_step_num % args.ckpt_interval == 0:
+            if current_step_num - args.ckpt_interval > 0:
+                old_path = os.path.join(args.ckpt_path, f"latest_{args.model_type}.pt")
+                if os.path.exists(old_path):
+                    new_path = os.path.join(args.ckpt_path, f"{current_step_num - args.ckpt_interval}_{args.model_type}.pt")
+                    os.rename(old_path, new_path)
             save_checkpoint(
-                args.ckpt_path, 
+                os.path.join(args.ckpt_path, f"latest_{args.model_type}.pt"), 
                 model, 
                 optimizer, 
                 current_step_num
@@ -347,7 +359,7 @@ def main():
             
     print("Training finished.")
     save_checkpoint(
-        args.ckpt_path.replace(".pt", "_final.pt"), 
+        os.path.join(args.ckpt_path, f"final_{args.model_type}.pt"), 
         model, 
         optimizer, 
         args.max_steps

@@ -4,6 +4,9 @@ import cProfile
 import multiprocessing
 from collections import Counter, defaultdict
 from typing import List, Dict, Tuple, Optional, BinaryIO
+from tqdm import tqdm
+import base64
+import json
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
@@ -180,12 +183,20 @@ def train_bpe(
     
     current_words = Counter()
     with multiprocessing.Pool(num_processes) as pool:
+        print(f"\n--- Start Counting ---")
         all_counts_lists = pool.map(worker_func, file_chunks)
         for count in all_counts_lists:
             current_words.update(count)
 
     merges: List[Tuple[bytes, bytes]] = []
-    for i in range(num_merges):
+
+    pbar = tqdm(
+        range(num_merges),
+        initial = 0,
+        total = num_merges,
+        desc = "Merged"
+    )
+    for i in pbar:
         pair_counts = get_pair_counts(current_words)
         
         if not pair_counts:
@@ -210,9 +221,9 @@ def train_bpe(
     return vocab, merges
 
 def main():
-    input_file = "/Users/yichenxu/Library/CloudStorage/OneDrive-个人/Documents/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-valid.txt"
+    input_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-train.txt"
     separator = "<|endoftext|>"
-    target_vocab_size = 1000
+    target_vocab_size = 10000
     special_tokens = ["<|endoftext|>"]
     
     trained_vocab, trained_merges = train_bpe(
@@ -221,15 +232,41 @@ def main():
         special_tokens,
         num_processes=8
     )
-
+    
     print(f"\n--- Training Complete ---")
     print(f"Final Vocab Size: {len(trained_vocab)}")
-    
-    save_path = "/Users/yichenxu/Library/CloudStorage/OneDrive-个人/Documents/NLPDL-2025Fall/hw1_bpe_and_lm/data/test.txt"
-    with open(save_path, "w", encoding="utf-8") as f:
-        f.write(str(trained_vocab))
-        f.write("\n MERGES \n")
-        f.write(str(trained_merges))
+    print(f"Total Merges: {len(trained_merges)}")
+
+    bs = list(range(ord("!"), ord("~")+1)) + \
+        list(range(ord("¡"), ord("¬")+1)) + \
+        list(range(ord("®"), ord("ÿ")+1))
+    cs = bs[:]
+    n = 0
+    for b in range(2**8):
+        if b not in bs:
+            bs.append(b)
+            cs.append(2**8 + n)
+            n += 1
+    byte_to_char_map = {b: chr(c) for b, c in zip(bs, cs)}
+
+    save_vocab = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/trained_vocab.json"
+    vocab_to_save = {}
+    for int_id, token_bytes in trained_vocab.items():
+        token_string = "".join(byte_to_char_map[b] for b in token_bytes)
+        vocab_to_save[token_string] = int_id
+    with open(save_vocab, "w", encoding="utf-8") as f:
+        json.dump(vocab_to_save, f, ensure_ascii=False, indent=2)
+
+    print(f"Saved vocabulary to {save_vocab}")
+
+    save_merges = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/trained_merges.txt"
+    with open(save_merges, "w", encoding="utf-8") as f:
+        for b1, b2 in trained_merges:
+            s1 = "".join(byte_to_char_map[b] for b in b1)
+            s2 = "".join(byte_to_char_map[b] for b in b2)
+            f.write(f"{s1} {s2}\n")
+
+    print(f"Saved merges to {save_merges}")
 
 
 if __name__ == "__main__":

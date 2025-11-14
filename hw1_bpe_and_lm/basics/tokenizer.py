@@ -1,6 +1,9 @@
 import regex as re
 from typing import List, Dict, Tuple, Optional, Iterable
 from functools import lru_cache
+import os
+import json
+import numpy as np
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
@@ -154,43 +157,89 @@ class Tokenizer:
         special_tokens: Optional[List[str]] = None
     ) -> "Tokenizer":
         """
-        Constructs a Tokenizer from serialized vocabulary and merge files.
+        Constructs a Tokenizer from GPT-2-style vocab and merge files.
 
         Args:
-            vocab_filepath: Path to the .json vocab file.
-            merges_filepath: Path to the .bpe merges file.
+            vocab_filepath: Path to the .json vocab file (e.g., gpt2_vocab.json)
+            merges_filepath: Path to the .bpe merges file (e.g., gpt2_merges.txt)
             special_tokens: Optional list of special token strings.
 
         Returns:
             A new Tokenizer instance.
         """
-        
+        bs = list(range(ord("!"), ord("~")+1)) + \
+             list(range(ord("¡"), ord("¬")+1)) + \
+             list(range(ord("®"), ord("ÿ")+1))
+        cs = bs[:]
+        n = 0
+        for b in range(2**8):
+            if b not in bs:
+                bs.append(b)
+                cs.append(2**8 + n)
+                n += 1
+        byte_to_char_map = {b: chr(c) for b, c in zip(bs, cs)}
+        char_to_byte_map = {c: b for b, c in byte_to_char_map.items()}
+
         try:
             with open(vocab_filepath, 'r', encoding='utf-8') as f:
                 vocab_json = json.load(f)
             
-            vocab = {
-                int(k): base64.b64decode(v.encode('utf-8')) 
-                for k, v in vocab_json.items()
-            }
+            inverted_vocab_str = {id: token_str for token_str, id in vocab_json.items()}
+            vocab = {}
+            for id, token_str in inverted_vocab_str.items():
+                token_bytes = b"".join(bytes([char_to_byte_map[c]]) for c in token_str)
+                vocab[id] = token_bytes
+
         except Exception as e:
             print(f"Error loading vocab file {vocab_filepath}: {e}")
             raise
-            
+
         merges = []
         try:
             with open(merges_filepath, 'r', encoding='utf-8') as f:
-                next(f) # Skip the header line
                 for line in f:
                     line = line.strip()
-                    if not line:
+                    if not line or line.startswith('#'):
                         continue
+                    
                     part1, part2 = line.split()
-                    b1 = ast.literal_eval(part1)
-                    b2 = ast.literal_eval(part2)
+
+                    b1 = b"".join(bytes([char_to_byte_map[c]]) for c in part1)
+                    b2 = b"".join(bytes([char_to_byte_map[c]]) for c in part2)
                     merges.append((b1, b2))
         except Exception as e:
             print(f"Error loading merges file {merges_filepath}: {e}")
             raise
 
         return cls(vocab=vocab, merges=merges, special_tokens=special_tokens)
+
+def main():
+
+    print("Loading tokenizer...")
+    # vocab = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/tests/fixtures/gpt2_vocab.json"
+    # merges = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/tests/fixtures/gpt2_merges.txt"
+    vocab = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/trained_vocab.json"
+    merges = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/trained_merges.txt"
+    # txt_train_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-valid.txt"
+    txt_train_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-valid.txt"
+    # txt_valid_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-valid.txt"
+    npy_train_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-valid.npy"
+    # npy_valid_file = "/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/TinyStoriesV2-GPT4-valid.npy"
+    special_tokens = ["<|endoftext|>"]
+    tokenizer = Tokenizer.from_files(vocab, merges, special_tokens)
+
+    print(f"Loading and encoding {txt_train_file}...")
+    with open(txt_train_file, 'r', encoding='utf-8') as f:
+        text = f.read()
+    
+    tokens = tokenizer.encode(text)
+    
+    token_array = np.array(tokens, dtype=np.uint16)
+    
+    print(f"Total tokens: {len(token_array)}")
+    print(f"Saving to {npy_train_file}...")
+    np.save(npy_train_file, token_array)
+
+
+if __name__ == "__main__":
+    main()
