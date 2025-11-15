@@ -471,6 +471,7 @@ class TransformerLM(nn.Module):
         ])
         self.ln_final = RMSNorm(d_model, device=device, dtype=dtype)
         self.output_linear = Linear(d_model, vocab_size, bias=False, device=device, dtype=dtype)
+        self.context_length = context_length
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         """Applies the Transformer language model.
@@ -490,6 +491,33 @@ class TransformerLM(nn.Module):
         logits = self.output_linear(x) 
 
         return logits
+
+    @torch.no_grad()
+    def generate(
+        self,
+        prompt_token_ids: torch.Tensor,
+        max_gen_len: int,
+        temperature: float = 1.0,
+        top_p: float = 1.0,
+        special_token: int = 9999,
+    ):
+        self.eval()
+        device = next(self.parameters()).device
+        tokens = prompt_token_ids.to(device)
+
+        for _ in range(max_gen_len):
+            x = tokens if tokens.size(1) <= self.context_length else tokens[:, -self.context_length:]
+            # pos = torch.arange(0, x.size(1), device=device).unsqueeze(0)
+            logits = self(x)
+            last_logits = logits[:, -1, :]
+            next_token = _sample_next_token(last_logits[0], temperature, top_p)  
+            if next_token == special_token:
+                break
+
+            new_tokens = torch.tensor([[next_token]], dtype=torch.long, device=device)
+            tokens = torch.cat([tokens, new_tokens], dim=1)
+
+        return tokens[0].tolist()
 
 class LSTMCell(nn.Module):
     """A single Long Short-Term Memory (LSTM) cell."""
@@ -672,3 +700,28 @@ class LSTMLM(nn.Module):
         lstm_output, _ = self.lstm(x, state=state)
         logits = self.output_linear(lstm_output)
         return logits
+
+
+@torch.no_grad()
+def _sample_next_token(logits, temperature, top_p):
+    if temperature <= 0.0:
+        return torch.argmax(logits).item()
+    
+    logits = logits / temperature
+
+    if top_p < 1.0:
+        probs = softmax(logits, dim=-1)
+        sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+        cum_probs = torch.cumsum(sorted_probs, dim=-1)
+        
+        sorted_indices_to_remove = cum_probs > top_p
+        sorted_indices_to_remove[1:] = sorted_indices_to_remove[:-1].clone()
+        sorted_indices_to_remove[0] = 0
+        
+        indices_to_remove = torch.zeros_like(logits, dtype=torch.bool).scatter_(
+            -1, sorted_indices, sorted_indices_to_remove
+        )
+        logits[indices_to_remove] = -float('inf')
+
+    final_probs = softmax(logits, dim=-1)
+    return torch.multinomial(final_probs, num_samples=1).item()
