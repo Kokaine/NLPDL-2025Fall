@@ -183,20 +183,20 @@ def train_bpe(
     
     current_words = Counter()
     with multiprocessing.Pool(num_processes) as pool:
-        print(f"\n--- Start Counting ---")
+        # print(f"\n--- Start Counting ---")
         all_counts_lists = pool.map(worker_func, file_chunks)
         for count in all_counts_lists:
             current_words.update(count)
 
     merges: List[Tuple[bytes, bytes]] = []
 
-    pbar = tqdm(
-        range(num_merges),
-        initial = 0,
-        total = num_merges,
-        desc = "Merged"
-    )
-    for i in pbar:
+    # pbar = tqdm(
+    #     range(num_merges),
+    #     initial = 0,
+    #     total = num_merges,
+    #     desc = "Merged"
+    # )
+    for i in range(num_merges):
         pair_counts = get_pair_counts(current_words)
         
         if not pair_counts:

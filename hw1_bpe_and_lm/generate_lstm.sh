@@ -2,7 +2,7 @@
 VOCAB_PATH=/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/trained_vocab.json
 MERGES_PATH=/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/data/trained_merges.txt
 VOCAB_SIZE=10000
-CKPT_PATH=/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/ckpt/final_transformer.pt
+CKPT_PATH=/mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/ckpt/final_lstm.pt
 
 echo "Activating virtual environment..."
 source /mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/.venv/bin/activate
@@ -14,12 +14,10 @@ python /mnt/nfs_project_a/yichen/NLPDL-2025Fall/hw1_bpe_and_lm/basics/generate.p
   --merges $MERGES_PATH \
   --prompt "On Tuesday, everyone in the city who owned a cat woke up to find it had been replaced by a small, perfectly carved wooden owl." \
   --max_gen_len 512 \
-  --temperature 1.0 \
-  --top_p 1.0 \
-  --model_type "transformer" \
+  --temperature 0.9 \
+  --top_p 0.9 \
+  --model_type "lstm" \
   --vocab_size $VOCAB_SIZE \
   --context_length 512 \
-  --d_model 1024 \
-  --num_layers 8 \
-  --num_heads 8 \
-  --d_ff 4096
+  --d_model 512 \
+  --num_layers 8

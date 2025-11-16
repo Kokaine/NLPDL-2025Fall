@@ -30,7 +30,7 @@ def get_args() -> argparse.Namespace:
     """Parses command-line arguments."""
     parser = argparse.ArgumentParser(description="Train a Language Model")
     
-    # --- I/O and Checkpointing ---
+    # --- IO and Checkpointing ---
     parser.add_argument(
         "--train_data", type=str, required=True, 
         help="Path to the memory-mapped .npy file for training data."
@@ -65,7 +65,7 @@ def get_args() -> argparse.Namespace:
         "--num_layers", type=int, default=8, 
         help="Number of layers in the model."
     )
-    # Transformer
+    # Transformer specific arguments
     parser.add_argument(
         "--num_heads", type=int, default=8, 
         help="Number of attention heads (for Transformer)."
@@ -145,8 +145,6 @@ def setup_device(device_str: str) -> str:
     if device_str == "auto":
         if torch.cuda.is_available():
             return "cuda"
-        elif torch.backends.mps.is_available():
-            return "mps"
         else:
             return "cpu"
     return device_str
@@ -224,7 +222,7 @@ def main():
     args.device = setup_device(args.device)
     print(f"Using device: {args.device}")
     
-    torch.manual_seed(1337)
+    torch.manual_seed(999)
     
     use_swanlab = setup_logging(args)
     train_data = load_data(args.train_data)
@@ -283,7 +281,6 @@ def main():
         gradient_clipping(model.parameters(), max_l2_norm=args.grad_clip_norm)
         optimizer.step()
         
-        # Logging
         if current_step_num % args.log_interval == 0:
             val_loss = evaluate(model, val_data, args)
             end_time = time.time()

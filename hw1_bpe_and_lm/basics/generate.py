@@ -2,9 +2,8 @@ import argparse
 import torch
 import numpy as np
 
-# Import all your custom modules
 from modules import TransformerLM, LSTMLM
-from tokenizer import Tokenizer # Assumes your tokenizer is in tokenizer.py
+from tokenizer import Tokenizer
 
 def get_args():
     parser = argparse.ArgumentParser(description="Generate text from a trained model")
@@ -21,7 +20,7 @@ def get_args():
     parser.add_argument("--top_p", type=float, default=0.9)
     parser.add_argument("--special_tokens", type=str, default="<|endoftext|>")
 
-    # --- Model Architecture (MUST match the checkpoint) ---
+    # --- Model Architecture ---
     parser.add_argument("--model_type", type=str, required=True, choices=["transformer", "lstm"])
     parser.add_argument("--vocab_size", type=int, required=True)
     parser.add_argument("--context_length", type=int, default=256)
@@ -59,7 +58,7 @@ def main():
             device=args.device,
             dtype=torch.float32
         )
-    else: # lstm
+    else:
         model = LSTMLM(
             vocab_size=args.vocab_size,
             d_model=args.d_model,
@@ -69,9 +68,6 @@ def main():
         )
     
     model.to(args.device)
-
-    # print(f"Loading checkpoint from {args.ckpt_path}...")
-    # We only need the model's state_dict, not the optimizer's
     ckpt = torch.load(args.ckpt_path, map_location=args.device)
     model.load_state_dict(ckpt['model_state_dict'])
 
@@ -80,8 +76,7 @@ def main():
     prompt_tensor = torch.tensor(prompt_ids, dtype=torch.long, device=args.device).unsqueeze(0)
 
     print("--- Generating ---")
-    
-    # Call the model's new .generate() method
+
     generated_ids = model.generate(
         prompt_tensor,
         args.max_gen_len,
@@ -90,9 +85,7 @@ def main():
         special_token_id
     )
 
-    # Decode the output
     generated_text = tokenizer.decode(generated_ids)
-    
     print(generated_text)
     print("--------------------")
 

@@ -507,7 +507,6 @@ class TransformerLM(nn.Module):
 
         for _ in range(max_gen_len):
             x = tokens if tokens.size(1) <= self.context_length else tokens[:, -self.context_length:]
-            # pos = torch.arange(0, x.size(1), device=device).unsqueeze(0)
             logits = self(x)
             last_logits = logits[:, -1, :]
             next_token = _sample_next_token(last_logits[0], temperature, top_p)  
@@ -579,8 +578,6 @@ class LSTMCell(nn.Module):
 
         return (h_next, c_next)
 
-
-
 class LSTM(nn.Module):
     """Multi-layer LSTM network with batch-first input."""
 
@@ -645,7 +642,7 @@ class LSTM(nn.Module):
                 h_next_states.append(h_layer_next)
                 c_next_states.append(c_layer_next)
                 x_t = h_layer_next
-            # not sure whethter use unsqueeze?
+
             output.append(x_t.unsqueeze(1))
             h_prev = torch.stack(h_next_states, dim=0)
             c_prev = torch.stack(c_next_states, dim=0)
@@ -697,10 +694,38 @@ class LSTMLM(nn.Module):
         """
         
         x = self.token_embedding(input_ids)
-        lstm_output, _ = self.lstm(x, state=state)
+        lstm_output, next_state = self.lstm(x, state=state)
         logits = self.output_linear(lstm_output)
-        return logits
+        return logits, next_state
+    
+    @torch.no_grad()
+    def generate(
+        self,
+        prompt_token_ids: torch.Tensor,
+        max_gen_len: int,
+        temperature: float = 1.0,
+        top_p: float = 1.0,
+        special_token: int = 9999,
+    ):
+        self.eval()
+        device = next(self.parameters()).device
+        prompt_tensor = prompt_token_ids.to(device)
+        
+        _, state = self(prompt_tensor, state=None)
+        next_token = prompt_tensor[:, -1:]
+        generated_token_ids = prompt_token_ids[0].tolist()
 
+        for _ in range(max_gen_len):
+            logits, state = self(next_token, state=state)
+            last_logits = logits[0, -1, :]
+            next_token = _sample_next_token(last_logits, temperature, top_p)
+            if next_token == special_token:
+                break
+
+            generated_token_ids.append(next_token)
+            next_token = torch.tensor([[next_token]], dtype=torch.long, device=device)
+
+        return generated_token_ids
 
 @torch.no_grad()
 def _sample_next_token(logits, temperature, top_p):

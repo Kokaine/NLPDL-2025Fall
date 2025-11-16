@@ -157,11 +157,11 @@ class Tokenizer:
         special_tokens: Optional[List[str]] = None
     ) -> "Tokenizer":
         """
-        Constructs a Tokenizer from GPT-2-style vocab and merge files.
+        Constructs a Tokenizer from vocab and merge files.
 
         Args:
-            vocab_filepath: Path to the .json vocab file (e.g., gpt2_vocab.json)
-            merges_filepath: Path to the .bpe merges file (e.g., gpt2_merges.txt)
+            vocab_filepath: Path to the .json vocab file
+            merges_filepath: Path to the .txt merges file
             special_tokens: Optional list of special token strings.
 
         Returns:
