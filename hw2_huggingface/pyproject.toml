@@ -13,7 +13,7 @@ dependencies = [
     "evaluate",
     "nltk",
     "numpy<2.0.0",
-    "peft>=0.17.1",
+    "peft>=0.17.0,<0.18.0",
     "pyarrow<21.0.0",
     "pytest",
     "rouge-score",
