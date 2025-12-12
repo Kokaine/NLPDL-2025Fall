@@ -1,0 +1,10 @@
+### model
+model_name_or_path: Qwen/Qwen1.5-0.5B
+adapter_name_or_path: qwen-0.5b/lora/sft
+template: qwen
+
+### export
+export_dir: qwen-0.5b/qwen-0.5b-samsum-merged
+export_size: 1
+export_device: cpu
+export_legacy_format: false

@@ -36,7 +36,7 @@ def test_get_model_bert():
     '''
     Test getting a BERT model and tokenizer.
     '''
-    tokenizer, model = get_model("bert-base-uncased", 3)
+    tokenizer, model = get_model("bert-base-uncased", 3, trust_remote_code = True)
     assert tokenizer is not None
     assert model is not None
 

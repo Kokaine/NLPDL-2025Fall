@@ -168,7 +168,8 @@ def get_model(model_name: str, num_labels: int, trust_remote_code: bool):
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-        model.config.pad_token_id = tokenizer.eos_token_id
+    
+    model.config.pad_token_id = tokenizer.pad_token_id
 
     return tokenizer, model
 
@@ -253,7 +254,15 @@ def compute_metrics(pred) -> Dict[str, float]:
     accuracy_metric = evaluate.load("accuracy")
     f1_metric = evaluate.load("f1")
     
-    logits, labels = pred
+    if hasattr(pred, "predictions") and hasattr(pred, "label_ids"):
+        logits = pred.predictions
+        labels = pred.label_ids
+    else:
+        logits, labels = pred
+
+    if isinstance(logits, tuple):
+        logits = logits[0]
+        
     predictions = np.argmax(logits, axis=1)
 
     acc = accuracy_metric.compute(predictions=predictions, references=labels)
@@ -266,7 +275,7 @@ def compute_metrics(pred) -> Dict[str, float]:
         "accuracy": acc["accuracy"],
         "macro_f1": f1_macro["f1"],
         "micro_f1": f1_micro["f1"],
-        "weight_f1": f1_weighted["f1"]
+        "weighted_f1": f1_weighted["f1"]
     }
 
 

@@ -7,7 +7,7 @@ __pycache__/
 *.so
 
 # Distribution / packaging
-./hw2_huggingface/datasetsdatasets/
+datasets/
 data/
 ckpt/
 .Python
