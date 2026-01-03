@@ -3,6 +3,7 @@
 import os
 import json
 import random
+from typing import List
 from datasets import Dataset, DatasetDict, load_dataset, concatenate_datasets, Value
 
 ## * You can add more helper functions or modify function arguments if needed
@@ -121,7 +122,7 @@ def get_fs(dataset_name: str, sep_token: str, sample_size: int):
     })
 
 ## ! DO NOT change the function name or arguments
-def get_dataset(dataset_name: str, sep_token: str) -> DatasetDict:
+def get_dataset(dataset_name: str | List[str], sep_token: str) -> DatasetDict:
     '''
 	dataset_name: str, the name of the dataset
 	sep_token: str, the sep_token used by tokenizer(e.g. '<sep>')
@@ -147,7 +148,7 @@ def get_dataset(dataset_name: str, sep_token: str) -> DatasetDict:
 
 
 
-    elif isinstance(dataset_name, list):
+    elif isinstance(dataset_name, List):
         ## TODO: implement for aggregation
         dataset_list = [get_dataset(name, sep_token) for name in dataset_name]
         return  aggregate_datasets(dataset_list, dataset_name)

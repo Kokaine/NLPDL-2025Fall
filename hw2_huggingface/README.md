@@ -156,8 +156,8 @@ Please use all the packages, functions or classes mentioned below in your traini
 
 After you finish the script,
 
-- Use `bert-base-uncased`, `facebook/bart-base` and `Qwen/Qwen1.5-0.5B` as your base model.
-- Use `restaurant_sup`, `acl_sup` and `agnew_sup` as your datasets.
+- Use `bert-base-uncased`, `facebook/bart-large` and `Qwen/Qwen1.5-0.5B` as your base model.
+- Use `restaurant_sup`, `acl_sup` and `agnews_sup` as your datasets.
 - To make the results reliable, you need to run the same experiments several times and report the standard deviation.
 - Adjust the batch size, epoch number and learning rate to make your results converge stably.
   > These models are highly capable and have been pre-trained on a large scale of data. Set a **small learning rate** and run **few epoches** to avoid overfitting or even catastrophic forgetting!
@@ -198,7 +198,9 @@ Nowadays, there are more easy-to-operate frameworks available for training or in
    - You can find example files in `LLama-Factory/examples/merge_lora`.
 5. Start the engine to fine-tune your model.
 6. Implement `eval.py` to calculate `BLEU`, `ROUGE-L` and `BERTScore-F1`, and run your evaluation on the test set.
-   - Set `facebook/bart-large` as the scoring model of `BERTScore`
+   - Calculate `BLEU` with `nltk` or `sacrebleu`. The result is different, why?
+   - Calculate `ROUGE-L` with `rouge` or `rouge_score`.
+   - Set `facebook/bart-large` as the scoring model of `BERTScore`.
    - `bert_score` package supports batch process of multiple reference-candidate pairs, but please be aware that many other packages can only process one pair per function call.
 
 After finish the tasks, you should copy your written `yaml` files for training and merging to `hw2_huggingface` directory. Record your training process by inserting images from `wandb` in your report.
