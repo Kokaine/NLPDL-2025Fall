@@ -4,7 +4,7 @@ import json
 import random
 import torch
 import typer
-import swanlab  # CHANGED: Import swanlab instead of wandb
+import swanlab
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Literal, Optional
@@ -13,11 +13,11 @@ from unittest.mock import patch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 
-# Add project root to path
+
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-# Assumed imports from your specific project structure
+
 from utils import (
     compute_group_normalized_rewards,
     tokenize_prompt_and_output,
@@ -28,11 +28,9 @@ from utils import (
 )
 from data.drgrpo_grader import r1_zero_reward_fn
 
-# --- Configuration ---
 
 @dataclass
 class GRPOConfig:
-    # Model & Data
     model_name_or_path: str = 'Qwen/Qwen3-0.6B'
     train_data_path: str = './data/gsm8k/train.jsonl'
     val_data_path: str = './data/gsm8k/test.jsonl'
@@ -63,11 +61,9 @@ class GRPOConfig:
     train_device: str = 'cuda:0'
     eval_device: str = 'cuda:1'
     
-    # CHANGED: SwanLab config
     swanlab_project: str = 'NLPDL-grpo'
     swanlab_run_name: str = 'grpo-run'
 
-# --- Utils ---
 
 def load_data(path: str):
     questions, answers = [], []
@@ -87,7 +83,6 @@ def setup_vllm(model_path: str, device: str, seed: int, mem_util: float) -> LLM:
     from vllm.model_executor import set_random_seed
     set_random_seed(seed)
     
-    # Patching to allow vLLM to run alongside PyTorch training process
     with patch("torch.distributed.get_world_size", return_value=1), \
          patch("vllm.worker.worker.Worker._assert_memory_footprint_increased_during_profiling", return_value=None):
         return LLM(
@@ -103,7 +98,6 @@ def sync_policy_to_vllm(policy: torch.nn.Module, vllm_instance: LLM):
     vllm_model = vllm_instance.llm_engine.model_executor.driver_worker.model_runner.model
     vllm_model.load_weights(policy.state_dict().items())
 
-# --- Core Logic Steps ---
 
 def perform_rollout(
     vllm_model: LLM, 
@@ -159,13 +153,11 @@ def train_optimization_step(
     n_batches = cfg.rollout_batch_size // micro_bs
 
     for _ in range(cfg.epochs_per_rollout):
-        # Shuffle
         perm = torch.randperm(cfg.rollout_batch_size)
         
         for i in range(n_batches):
             idx = perm[i*micro_bs : (i+1)*micro_bs]
             
-            # Prepare microbatch
             mb_inputs = input_ids[idx].to(cfg.train_device)
             mb_labels = labels[idx].to(cfg.train_device)
             mb_mask = response_mask[idx].to(cfg.train_device)
@@ -178,7 +170,6 @@ def train_optimization_step(
                 model=policy, input_ids=mb_inputs, labels=mb_labels, return_token_entropy=True
             )
             
-            # Loss
             loss, _ = grpo_microbatch_train_step(
                 policy_log_probs=log_prob_data['log_probs'],
                 response_mask=mb_mask,
@@ -190,16 +181,13 @@ def train_optimization_step(
                 cliprange=cfg.cliprange
             )
 
-            # Optimization
             if (i + 1) % cfg.gradient_accumulation_steps == 0:
                 torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
                 optimizer.step()
                 optimizer.zero_grad()
                 
-                # Logging
                 avg_ent = masked_mean(log_prob_data['token_entropy'], mb_mask, dim=None).item()
                 
-                # CHANGED: SwanLab Log
                 swanlab.log({
                     "train/loss": loss.item(), 
                     "train/entropy": avg_ent
@@ -223,7 +211,6 @@ def evaluate(vllm_model, questions, answers, template, cfg: GRPOConfig, step: in
 
     n = len(prompts)
     
-    # CHANGED: SwanLab Log
     swanlab.log({
         "eval/accuracy": total_acc/n,
         "eval/format": total_fmt/n,
@@ -232,32 +219,27 @@ def evaluate(vllm_model, questions, answers, template, cfg: GRPOConfig, step: in
     })
     print(f"Eval Step {step}: Acc={total_acc/n:.2f}")
 
-# --- Main Loop ---
-
 app = typer.Typer()
 
 @app.command()
 def main(
     config_path: Optional[str] = None,
-    # Allow overriding specific important params via CLI
     learning_rate: float = 1e-5,
     n_grpo_steps: int = 200,
 ):
     cfg = GRPOConfig(learning_rate=learning_rate, n_grpo_steps=n_grpo_steps)
     
-    # Setup
     torch.manual_seed(cfg.seed)
     random.seed(cfg.seed)
     os.makedirs(cfg.output_dir, exist_ok=True)
     
-    # CHANGED: Initialize SwanLab
     swanlab.init(
         project=cfg.swanlab_project,
         experiment_name=cfg.swanlab_run_name,
         config=cfg.__dict__
     )
 
-    # Load Resources
+
     train_q, train_a = load_data(cfg.train_data_path)
     val_q, val_a = load_data(cfg.val_data_path)
     prompt_tpl = load_prompt_template(cfg.prompt_path)
@@ -284,14 +266,13 @@ def main(
         # 2. Rewards
         advantages, raw_rewards, meta = compute_metrics_and_rewards(responses, prompts, gts, cfg)
         
-        # CHANGED: SwanLab Log
         swanlab.log({"train/mean_reward": meta['group_means'].mean().item(), "train_step": step})
         
         # 3. Prepare Data (Tokenize)
         tokenized = tokenize_prompt_and_output(prompts, responses, tokenizer)
         input_ids, labels, mask = tokenized['input_ids'], tokenized['labels'], tokenized['response_mask']
 
-        # 4. Off-policy prep (Old Log Probs)
+        # 4. Off-policy prep
         old_log_probs = None
         if cfg.loss_type == "grpo_clip":
             with torch.inference_mode():
@@ -313,7 +294,6 @@ def main(
             policy.save_pretrained(f"{cfg.output_dir}/step_{step+1}")
             tokenizer.save_pretrained(f"{cfg.output_dir}/step_{step+1}")
 
-    # CHANGED: Finish SwanLab
     swanlab.finish()
 
 if __name__ == "__main__":

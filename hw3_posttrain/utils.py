@@ -191,10 +191,6 @@ def get_response_log_probs(
     pred_logits = model(input_ids).logits
     log_probs_all = F.log_softmax(pred_logits, dim=-1)
 
-    # Gather the log probabilities of the actual tokens in labels
-    # labels shape: (batch_size, seq_length)
-    # log_probs_all shape: (batch_size, seq_length, vocab_size)
-    # We need to gather along the vocab dimension
     labels_expanded = labels.unsqueeze(-1)  # (batch_size, seq_length, 1)
     log_probs = torch.gather(log_probs_all, dim=-1, index=labels_expanded).squeeze(-1)
 
